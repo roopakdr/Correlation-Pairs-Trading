@@ -93,26 +93,43 @@ class InteractivePairsTradingDashboard:
         signals = pd.DataFrame(index=self.data.index)
         signals['z_score'] = z_score
         signals['position'] = 0
+        signals['trade_id'] = 0
         
         current_position = 0
+        trade_id = 0
+        trade_entry_idx = None
+        
         for i in range(1, len(signals)):
             if pd.isna(signals['z_score'].iloc[i]):
                 signals.iloc[i, signals.columns.get_loc('position')] = current_position
+                signals.iloc[i, signals.columns.get_loc('trade_id')] = trade_id
                 continue
             
             z = signals['z_score'].iloc[i]
+            prev_position = current_position
             
             if current_position != 0 and abs(z) > stop_loss:
                 current_position = 0
+                trade_id += 1
+                trade_entry_idx = None
             elif current_position == 0:
                 if z < -entry_threshold:
                     current_position = 1
+                    if prev_position == 0:
+                        trade_id += 1
+                        trade_entry_idx = i
                 elif z > entry_threshold:
                     current_position = -1
+                    if prev_position == 0:
+                        trade_id += 1
+                        trade_entry_idx = i
             elif abs(z) < exit_threshold:
                 current_position = 0
+                trade_id += 1
+                trade_entry_idx = None
             
             signals.iloc[i, signals.columns.get_loc('position')] = current_position
+            signals.iloc[i, signals.columns.get_loc('trade_id')] = trade_id
         
         returns1 = self.data[self.ticker1].pct_change()
         returns2 = self.data[self.ticker2].pct_change()
@@ -142,9 +159,17 @@ class InteractivePairsTradingDashboard:
         drawdown = (strategy_cumulative - cummax) / cummax * 100
         max_dd = float(drawdown.min()) if len(drawdown) > 0 else 0
         
-        num_trades = (signals['position'].diff().fillna(0) != 0).sum()
-        trades_with_returns = strategy_returns_aligned[strategy_returns_aligned != 0]
-        win_rate = (trades_with_returns > 0).sum() / len(trades_with_returns) * 100 if len(trades_with_returns) > 0 else 0
+        signals_aligned = signals.loc[common_index]
+        trade_returns = []
+        
+        for tid in range(1, signals_aligned['trade_id'].max() + 1):
+            trade_mask = signals_aligned['trade_id'] == tid
+            trade_return = strategy_returns_aligned[trade_mask].sum()
+            if abs(trade_return) > 1e-10:
+                trade_returns.append(trade_return)
+        
+        num_trades = len(trade_returns)
+        win_rate = (sum(1 for r in trade_returns if r > 0) / num_trades * 100) if num_trades > 0 else 0
         
         return {
             'total_return': total_return,
@@ -161,9 +186,8 @@ class InteractivePairsTradingDashboard:
             'drawdown': drawdown
         }
     
-    @st.cache_data
-    def run_optimization(_self):
-        """Run full parameter optimization with caching."""
+    def run_optimization(self):
+        """Run full parameter optimization."""
         progress_bar = st.progress(0)
         status_text = st.empty()
         
@@ -176,6 +200,8 @@ class InteractivePairsTradingDashboard:
         results = []
         total = len(spread_methods) * len(z_windows) * len(entry_thresholds) * len(exit_thresholds) * len(stop_losses)
         count = 0
+        
+        status_text.text(f"Starting optimization of {total} parameter combinations...")
         
         for spread_method in spread_methods:
             for z_window in z_windows:
@@ -192,10 +218,10 @@ class InteractivePairsTradingDashboard:
                             progress_bar.progress(progress)
                             
                             if count % 50 == 0:
-                                status_text.text(f"Progress: {count}/{total} ({progress*100:.1f}%)")
+                                status_text.text(f"Progress: {count}/{total} ({progress*100:.1f}%) - Found {len(results)} valid strategies")
                             
                             try:
-                                backtest = _self.backtest_strategy(
+                                backtest = self.backtest_strategy(
                                     entry, exit, stop_loss, spread_method, z_window
                                 )
                                 
@@ -212,14 +238,20 @@ class InteractivePairsTradingDashboard:
                                         'win_rate': backtest['win_rate'],
                                         'num_trades': backtest['num_trades']
                                     })
-                            except:
+                            except Exception as e:
+                                if count % 100 == 0:
+                                    status_text.text(f"Error in optimization: {str(e)}")
                                 continue
         
         progress_bar.empty()
         status_text.empty()
-        st.success(f"✅ Optimization complete! Tested {len(results)} valid strategies.")
         
-        return pd.DataFrame(results)
+        if len(results) > 0:
+            st.success(f"✅ Optimization complete! Tested {len(results)} valid strategies.")
+            return pd.DataFrame(results)
+        else:
+            st.error("❌ No valid strategies found. Try different tickers or parameters.")
+            return pd.DataFrame()
 
 
 def main():
@@ -227,7 +259,17 @@ def main():
     
     st.title("🎯 Interactive Pairs Trading Dashboard")
     
-    # Sidebar for inputs
+    if 'spread_method' not in st.session_state:
+        st.session_state.spread_method = 'hedge_ratio'
+    if 'z_window' not in st.session_state:
+        st.session_state.z_window = 60
+    if 'entry' not in st.session_state:
+        st.session_state.entry = 1.5
+    if 'exit' not in st.session_state:
+        st.session_state.exit = 0.5
+    if 'stop_loss' not in st.session_state:
+        st.session_state.stop_loss = 3.0
+    
     with st.sidebar:
         st.header("📌 Configuration")
         
@@ -247,319 +289,574 @@ def main():
             end_date = None
         
         run_analysis = st.button("🚀 Run Analysis", type="primary", use_container_width=True)
+        
+        if st.button("🔄 Reset Dashboard", use_container_width=True):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
     
-    # Initialize session state
-    if 'dashboard' not in st.session_state:
-        st.session_state.dashboard = None
-        st.session_state.optimization_done = False
+    should_run = run_analysis or ('dashboard' in st.session_state and st.session_state.dashboard is not None)
     
-    if 'spread_method' not in st.session_state:
-        st.session_state.spread_method = 'hedge_ratio'
-    if 'z_window' not in st.session_state:
-        st.session_state.z_window = 60
-    if 'entry' not in st.session_state:
-        st.session_state.entry = 1.5
-    if 'exit' not in st.session_state:
-        st.session_state.exit = 0.5
-    if 'stop_loss' not in st.session_state:
-        st.session_state.stop_loss = 3.0
+    if not should_run:
+        st.info("👈 Enter ticker symbols in the sidebar and click 'Run Analysis' to begin!")
+        return
     
-    # Run analysis
-    if run_analysis or st.session_state.dashboard is not None:
-        if st.session_state.dashboard is None:
+    cache_key = f"{ticker1}_{ticker2}_{start_date}_{end_date}"
+    
+    if 'dashboard' not in st.session_state or st.session_state.get('cache_key') != cache_key:
+        if run_analysis or 'dashboard' not in st.session_state:
             dashboard = InteractivePairsTradingDashboard(ticker1, ticker2, start_date, end_date)
             
             if dashboard.fetch_data() is None:
                 return
             
             dashboard.fetch_sp500()
-            st.session_state.dashboard = dashboard
-        else:
-            dashboard = st.session_state.dashboard
-        
-        # Run optimization if not done
-        if not st.session_state.optimization_done:
+            
             with st.spinner("🔄 Running optimization... This may take a minute."):
                 dashboard.optimization_results = dashboard.run_optimization()
-                st.session_state.optimization_done = True
-        
-        df = dashboard.optimization_results
-        best_idx = df['sharpe'].idxmax()
-        worst_idx = df['sharpe'].idxmin()
-        best = df.loc[best_idx]
-        worst = df.loc[worst_idx]
-        
-        # Parameter controls
-        st.header("🎛️ Strategy Parameters")
-        
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            cols = st.columns(5)
             
-            with cols[0]:
-                spread_method = st.selectbox(
-                    "Spread Method",
-                    options=['hedge_ratio', 'log_ratio', 'ratio'],
-                    index=['hedge_ratio', 'log_ratio', 'ratio'].index(best['spread_method']),
-                    format_func=lambda x: {
-                        'hedge_ratio': 'Hedge Ratio',
-                        'log_ratio': 'Log Ratio',
-                        'ratio': 'Simple Ratio'
-                    }[x]
-                )
-            
-            with cols[1]:
-                z_window = st.slider("Z-Score Window", 20, 120, int(best['z_window']), 10)
-            
-            with cols[2]:
-                entry = st.slider("Entry Threshold (σ)", 0.5, 3.0, float(best['entry']), 0.5)
-            
-            with cols[3]:
-                exit = st.slider("Exit Threshold (σ)", 0.1, 1.0, float(best['exit']), 0.1)
-            
-            with cols[4]:
-                stop_loss = st.slider("Stop Loss (σ)", 2.5, 4.0, float(best['stop_loss']), 0.5)
+            st.session_state.dashboard = dashboard
+            st.session_state.cache_key = cache_key
+            st.session_state.optimization_done = True
+    
+    dashboard = st.session_state.dashboard
+    
+    if dashboard.optimization_results is None or len(dashboard.optimization_results) == 0:
+        st.error("❌ Optimization failed. Please try different ticker symbols.")
+        return
+    
+    df = dashboard.optimization_results
+    best_idx = df['sharpe'].idxmax()
+    worst_idx = df['sharpe'].idxmin()
+    best = df.loc[best_idx]
+    worst = df.loc[worst_idx]
+    
+    if 'params_loaded' not in st.session_state:
+        st.session_state.spread_method = best['spread_method']
+        st.session_state.z_window = int(best['z_window'])
+        st.session_state.entry = float(best['entry'])
+        st.session_state.exit = float(best['exit'])
+        st.session_state.stop_loss = float(best['stop_loss'])
+        st.session_state.params_loaded = True
+    
+    st.header("🎛️ Strategy Parameters")
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col2:
+        st.write("")
+        if st.button("🏆 Load Best", use_container_width=True):
+            st.session_state.spread_method = best['spread_method']
+            st.session_state.z_window = int(best['z_window'])
+            st.session_state.entry = float(best['entry'])
+            st.session_state.exit = float(best['exit'])
+            st.session_state.stop_loss = float(best['stop_loss'])
+            st.rerun()
         
-        with col2:
-            st.write("")  # Spacer
-            if st.button("🏆 Load Best", use_container_width=True):
-                st.rerun()
-            if st.button("⚠️ Load Worst", use_container_width=True):
-                spread_method = worst['spread_method']
-                z_window = int(worst['z_window'])
-                entry = worst['entry']
-                exit = worst['exit']
-                stop_loss = worst['stop_loss']
-                st.rerun()
+        if st.button("⚠️ Load Worst", use_container_width=True):
+            st.session_state.spread_method = worst['spread_method']
+            st.session_state.z_window = int(worst['z_window'])
+            st.session_state.entry = float(worst['entry'])
+            st.session_state.exit = float(worst['exit'])
+            st.session_state.stop_loss = float(worst['stop_loss'])
+            st.rerun()
+    
+    with col1:
+        cols = st.columns(5)
         
-        # Run backtest with current parameters
-        result = dashboard.backtest_strategy(entry, exit, stop_loss, spread_method, z_window)
+        with cols[0]:
+            spread_method = st.selectbox(
+                "Spread Method",
+                options=['hedge_ratio', 'log_ratio', 'ratio'],
+                index=['hedge_ratio', 'log_ratio', 'ratio'].index(st.session_state.spread_method),
+                format_func=lambda x: {
+                    'hedge_ratio': 'Hedge Ratio',
+                    'log_ratio': 'Log Ratio',
+                    'ratio': 'Simple Ratio'
+                }[x],
+                key='spread_select'
+            )
+            st.session_state.spread_method = spread_method
         
-        # Display metrics
-        st.header("📊 Performance Metrics")
-        metric_cols = st.columns(6)
+        with cols[1]:
+            z_window = st.slider(
+                "Z-Score Window", 
+                20, 120, 
+                st.session_state.z_window, 
+                10,
+                key='z_slider'
+            )
+            st.session_state.z_window = z_window
         
-        sharpe_rank = (df['sharpe'] > result['sharpe']).sum() + 1
-        return_rank = (df['total_return'] > result['total_return']).sum() + 1
+        with cols[2]:
+            entry = st.slider(
+                "Entry Threshold (σ)", 
+                0.5, 3.0, 
+                st.session_state.entry, 
+                0.5,
+                key='entry_slider'
+            )
+            st.session_state.entry = entry
         
-        with metric_cols[0]:
-            st.metric(
-                "Total Return",
-                f"{result['total_return']:.2f}%",
-                f"Rank: {return_rank}/{len(df)}"
+        with cols[3]:
+            exit = st.slider(
+                "Exit Threshold (σ)", 
+                0.1, 1.0, 
+                st.session_state.exit, 
+                0.1,
+                key='exit_slider'
+            )
+            st.session_state.exit = exit
+        
+        with cols[4]:
+            stop_loss = st.slider(
+                "Stop Loss (σ)", 
+                2.5, 4.0, 
+                st.session_state.stop_loss, 
+                0.5,
+                key='stop_slider'
+            )
+            st.session_state.stop_loss = stop_loss
+    
+    result = dashboard.backtest_strategy(entry, exit, stop_loss, spread_method, z_window)
+    
+    st.header("📊 Performance Metrics")
+    metric_cols = st.columns(6)
+    
+    sharpe_rank = (df['sharpe'] > result['sharpe']).sum() + 1
+    return_rank = (df['total_return'] > result['total_return']).sum() + 1
+    
+    with metric_cols[0]:
+        st.metric(
+            "Total Return",
+            f"{result['total_return']:.2f}%",
+            f"Rank: {return_rank}/{len(df)}"
+        )
+    
+    with metric_cols[1]:
+        st.metric(
+            "S&P 500 Return",
+            f"{result['sp500_return']:.2f}%",
+            f"{result['total_return'] - result['sp500_return']:.2f}% vs SPY"
+        )
+    
+    with metric_cols[2]:
+        st.metric(
+            "Sharpe Ratio",
+            f"{result['sharpe']:.2f}",
+            f"Rank: {sharpe_rank}/{len(df)}"
+        )
+    
+    with metric_cols[3]:
+        st.metric(
+            "Max Drawdown",
+            f"{abs(result['max_dd']):.2f}%"
+        )
+    
+    with metric_cols[4]:
+        st.metric(
+            "Win Rate",
+            f"{result['win_rate']:.1f}%"
+        )
+    
+    with metric_cols[5]:
+        st.metric(
+            "Trades",
+            f"{result['num_trades']}"
+        )
+    
+    st.header("📈 Analysis Charts")
+    
+    chart_col1, chart_col2 = st.columns(2)
+    
+    with chart_col1:
+        st.subheader("Normalized Stock Prices")
+        norm_data = dashboard.data / dashboard.data.iloc[0] * 100
+        fig1 = go.Figure()
+        fig1.add_trace(go.Scatter(
+            x=norm_data.index, y=norm_data[dashboard.ticker1],
+            name=dashboard.ticker1, line=dict(color='#3b82f6', width=2)
+        ))
+        fig1.add_trace(go.Scatter(
+            x=norm_data.index, y=norm_data[dashboard.ticker2],
+            name=dashboard.ticker2, line=dict(color='#ef4444', width=2)
+        ))
+        fig1.update_layout(height=400, hovermode='x unified', yaxis_title="Normalized Price")
+        st.plotly_chart(fig1, use_container_width=True)
+    
+    with chart_col2:
+        st.subheader("Cumulative Returns")
+        fig2 = go.Figure()
+        
+        strategy_dates = result['strategy_cumulative'].index
+        strategy_returns = (result['strategy_cumulative'] - 1) * 100
+        sp500_dates = result['sp500_cumulative'].index
+        sp500_returns = (result['sp500_cumulative'] - 1) * 100
+        
+        fig2.add_trace(go.Scatter(
+            x=sp500_dates,
+            y=sp500_returns,
+            name='S&P 500',
+            line=dict(color='#6366f1', width=3),
+            hovertemplate='Date: %{x}<br>S&P 500: %{y:.2f}%<extra></extra>',
+            showlegend=True
+        ))
+        
+        fig2.add_trace(go.Scatter(
+            x=strategy_dates,
+            y=strategy_returns,
+            name='Pairs Strategy',
+            line=dict(color='#10b981', width=3),
+            hovertemplate='Date: %{x}<br>Strategy: %{y:.2f}%<extra></extra>',
+            showlegend=True
+        ))
+        
+        fig2.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+        
+        final_strategy = float(strategy_returns.iloc[-1]) if len(strategy_returns) > 0 else 0.0
+        final_sp500 = float(sp500_returns.iloc[-1]) if len(sp500_returns) > 0 else 0.0
+        
+        if len(strategy_dates) > 0:
+            fig2.add_annotation(
+                x=strategy_dates[-1],
+                y=final_strategy,
+                text=f"Strategy: {final_strategy:.1f}%",
+                showarrow=True,
+                arrowhead=2,
+                ax=-50,
+                ay=-30,
+                bgcolor="#10b981",
+                font=dict(color="white", size=12)
             )
         
-        with metric_cols[1]:
-            st.metric(
-                "S&P 500 Return",
-                f"{result['sp500_return']:.2f}%",
-                f"{result['total_return'] - result['sp500_return']:.2f}% vs SPY"
+        if len(sp500_dates) > 0:
+            fig2.add_annotation(
+                x=sp500_dates[-1],
+                y=final_sp500,
+                text=f"S&P 500: {final_sp500:.1f}%",
+                showarrow=True,
+                arrowhead=2,
+                ax=-50,
+                ay=30,
+                bgcolor="#6366f1",
+                font=dict(color="white", size=12)
             )
         
-        with metric_cols[2]:
-            st.metric(
-                "Sharpe Ratio",
-                f"{result['sharpe']:.2f}",
-                f"Rank: {sharpe_rank}/{len(df)}"
-            )
+        fig2.update_layout(
+            height=400, 
+            hovermode='x unified', 
+            yaxis_title="Cumulative Return (%)",
+            xaxis_title="Date",
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01,
+                bgcolor="rgba(255, 255, 255, 0.9)",
+                bordercolor="gray",
+                borderwidth=1
+            ),
+            plot_bgcolor='rgba(0,0,0,0.05)',
+            paper_bgcolor='white'
+        )
         
-        with metric_cols[3]:
-            st.metric(
-                "Max Drawdown",
-                f"{abs(result['max_dd']):.2f}%"
-            )
+        if len(sp500_returns) == 0:
+            st.warning("⚠️ S&P 500 data not available")
         
-        with metric_cols[4]:
-            st.metric(
-                "Win Rate",
-                f"{result['win_rate']:.1f}%"
-            )
+        st.plotly_chart(fig2, use_container_width=True)
+    
+    chart_col3, chart_col4 = st.columns(2)
+    
+    with chart_col3:
+        st.subheader("Price Ratio with Trading Signals")
         
-        with metric_cols[5]:
-            st.metric(
-                "Trades",
-                f"{result['num_trades']}"
-            )
+        price_ratio = dashboard.data[dashboard.ticker1] / dashboard.data[dashboard.ticker2]
+        position_changes = result['signals']['position'].diff().fillna(0)
         
-        # Charts
-        st.header("📈 Analysis Charts")
+        # Get entry and exit points
+        entry_signals = result['signals'][(position_changes != 0) & (result['signals']['position'] != 0)].index
+        exit_signals = result['signals'][(position_changes != 0) & (result['signals']['position'] == 0)].index
         
-        # Row 1: Prices and Returns
-        chart_col1, chart_col2 = st.columns(2)
+        fig3 = go.Figure()
         
-        with chart_col1:
-            st.subheader("Normalized Stock Prices")
-            norm_data = dashboard.data / dashboard.data.iloc[0] * 100
-            fig1 = go.Figure()
-            fig1.add_trace(go.Scatter(
-                x=norm_data.index, y=norm_data[dashboard.ticker1],
-                name=dashboard.ticker1, line=dict(color='#3b82f6', width=2)
-            ))
-            fig1.add_trace(go.Scatter(
-                x=norm_data.index, y=norm_data[dashboard.ticker2],
-                name=dashboard.ticker2, line=dict(color='#ef4444', width=2)
-            ))
-            fig1.update_layout(height=400, hovermode='x unified', yaxis_title="Normalized Price")
-            st.plotly_chart(fig1, use_container_width=True)
+        fig3.add_trace(go.Scatter(
+            x=price_ratio.index, 
+            y=price_ratio,
+            name='Price Ratio',
+            line=dict(color='#3b82f6', width=2),
+            hovertemplate='Date: %{x}<br>Ratio: %{y:.4f}<extra></extra>'
+        ))
         
-        with chart_col2:
-            st.subheader("Cumulative Returns")
-            fig2 = go.Figure()
-            fig2.add_trace(go.Scatter(
-                x=result['strategy_cumulative'].index,
-                y=(result['strategy_cumulative'] - 1) * 100,
-                name='Pairs Strategy',
-                line=dict(color='#10b981', width=3)
-            ))
-            fig2.add_trace(go.Scatter(
-                x=result['sp500_cumulative'].index,
-                y=(result['sp500_cumulative'] - 1) * 100,
-                name='S&P 500',
-                line=dict(color='#6366f1', width=2, dash='dash')
-            ))
-            fig2.update_layout(height=400, hovermode='x unified', yaxis_title="Return (%)")
-            st.plotly_chart(fig2, use_container_width=True)
-        
-        # Row 2: Spread and Z-Score
-        chart_col3, chart_col4 = st.columns(2)
-        
-        with chart_col3:
-            st.subheader("Price Spread")
-            spread_ma = result['spread'].rolling(60).mean()
-            fig3 = go.Figure()
+        if len(entry_signals) > 0:
             fig3.add_trace(go.Scatter(
-                x=result['spread'].index, y=result['spread'],
-                name='Spread', line=dict(color='#8b5cf6', width=1.5)
-            ))
-            fig3.add_trace(go.Scatter(
-                x=spread_ma.index, y=spread_ma,
-                name='60-day MA', line=dict(color='#f59e0b', width=2, dash='dash')
-            ))
-            fig3.update_layout(height=400, hovermode='x unified', yaxis_title="Spread")
-            st.plotly_chart(fig3, use_container_width=True)
-        
-        with chart_col4:
-            st.subheader("Z-Score Timeline")
-            fig4 = go.Figure()
-            fig4.add_trace(go.Scatter(
-                x=result['z_score'].index, y=result['z_score'],
-                name='Z-Score', line=dict(color='#10b981', width=2)
-            ))
-            fig4.add_hline(y=entry, line_dash="dash", line_color="orange", annotation_text=f"Entry ±{entry}σ")
-            fig4.add_hline(y=-entry, line_dash="dash", line_color="orange")
-            fig4.add_hline(y=exit, line_dash="dot", line_color="green", annotation_text=f"Exit ±{exit}σ")
-            fig4.add_hline(y=-exit, line_dash="dot", line_color="green")
-            fig4.add_hline(y=0, line_color="black", line_width=1)
-            fig4.update_layout(height=400, hovermode='x unified', yaxis_title="Z-Score")
-            st.plotly_chart(fig4, use_container_width=True)
-        
-        # Row 3: Correlation and Drawdown
-        chart_col5, chart_col6 = st.columns(2)
-        
-        with chart_col5:
-            st.subheader("Rolling Correlation (60-day)")
-            rolling_corr = dashboard.data[dashboard.ticker1].rolling(60).corr(dashboard.data[dashboard.ticker2])
-            fig5 = go.Figure()
-            fig5.add_trace(go.Scatter(
-                x=rolling_corr.index, y=rolling_corr,
-                name='Correlation', line=dict(color='#3b82f6', width=2)
-            ))
-            fig5.add_hline(y=rolling_corr.mean(), line_dash="dash", line_color="red",
-                          annotation_text=f"Mean: {rolling_corr.mean():.3f}")
-            fig5.update_layout(height=400, hovermode='x unified', yaxis_title="Correlation")
-            st.plotly_chart(fig5, use_container_width=True)
-        
-        with chart_col6:
-            st.subheader("Strategy Drawdown")
-            fig6 = go.Figure()
-            fig6.add_trace(go.Scatter(
-                x=result['drawdown'].index, y=result['drawdown'],
-                fill='tozeroy', name='Drawdown',
-                line=dict(color='#ef4444', width=0),
-                fillcolor='rgba(239, 68, 68, 0.3)'
-            ))
-            fig6.update_layout(height=400, hovermode='x unified', yaxis_title="Drawdown (%)")
-            st.plotly_chart(fig6, use_container_width=True)
-        
-        # Row 4: Distribution and Sensitivity
-        chart_col7, chart_col8 = st.columns(2)
-        
-        with chart_col7:
-            st.subheader("Z-Score Distribution")
-            z_clean = result['z_score'].dropna()
-            fig7 = go.Figure()
-            fig7.add_trace(go.Histogram(
-                x=z_clean, nbinsx=50,
-                marker_color='#06b6d4', opacity=0.7
-            ))
-            fig7.update_layout(height=400, xaxis_title="Z-Score", yaxis_title="Frequency")
-            st.plotly_chart(fig7, use_container_width=True)
-        
-        with chart_col8:
-            st.subheader("Parameter Sensitivity")
-            param_df = df[(df['spread_method'] == spread_method) & (df['z_window'] == z_window)]
-            fig8 = go.Figure()
-            fig8.add_trace(go.Scatter(
-                x=param_df['entry'], y=param_df['sharpe'],
+                x=entry_signals,
+                y=price_ratio.loc[entry_signals],
                 mode='markers',
+                name='Entry Signal',
                 marker=dict(
-                    size=10,
-                    color=param_df['total_return'],
-                    colorscale='RdYlGn',
-                    showscale=True,
-                    colorbar=dict(title="Return %")
+                    symbol='circle',
+                    size=12,
+                    color='#10b981',
+                    line=dict(color='darkgreen', width=2)
                 ),
-                text=param_df['total_return'].round(2),
-                hovertemplate='Entry: %{x}<br>Sharpe: %{y:.2f}<br>Return: %{text}%'
+                hovertemplate='ENTRY<br>Date: %{x}<br>Ratio: %{y:.4f}<extra></extra>'
             ))
-            fig8.add_trace(go.Scatter(
-                x=[entry], y=[result['sharpe']],
-                mode='markers', name='Current',
-                marker=dict(size=20, color='red', symbol='star')
+        
+        if len(exit_signals) > 0:
+            fig3.add_trace(go.Scatter(
+                x=exit_signals,
+                y=price_ratio.loc[exit_signals],
+                mode='markers',
+                name='Exit Signal',
+                marker=dict(
+                    symbol='x',
+                    size=10,
+                    color='#ef4444',
+                    line=dict(color='darkred', width=2)
+                ),
+                hovertemplate='EXIT<br>Date: %{x}<br>Ratio: %{y:.4f}<extra></extra>'
             ))
-            fig8.update_layout(
-                height=400,
-                xaxis_title="Entry Threshold",
-                yaxis_title="Sharpe Ratio"
+        
+        ratio_ma = price_ratio.rolling(60).mean()
+        fig3.add_trace(go.Scatter(
+            x=ratio_ma.index, 
+            y=ratio_ma,
+            name='60-day MA',
+            line=dict(color='#f59e0b', width=2, dash='dash'),
+            hovertemplate='MA: %{y:.4f}<extra></extra>'
+        ))
+        
+        fig3.update_layout(
+            height=400, 
+            hovermode='x unified', 
+            yaxis_title=f"Price Ratio ({dashboard.ticker1}/{dashboard.ticker2})",
+            showlegend=True,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="right",
+                x=0.99,
+                bgcolor="rgba(255, 255, 255, 0.8)"
             )
-            st.plotly_chart(fig8, use_container_width=True)
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+    
+    with chart_col4:
+        st.subheader("Spread Z-Score with Entry/Exit Signals")
         
-        # Optimization Summary
-        st.header("🏆 Optimization Summary")
+        entry_z = result['z_score'].loc[entry_signals] if len(entry_signals) > 0 else pd.Series()
+        exit_z = result['z_score'].loc[exit_signals] if len(exit_signals) > 0 else pd.Series()
         
-        summary_col1, summary_col2, summary_col3 = st.columns(3)
+        fig4 = go.Figure()
         
-        with summary_col1:
-            st.subheader("Best Parameters")
-            st.write(f"**Method:** {best['spread_method']}")
-            st.write(f"**Z-Window:** {int(best['z_window'])}")
-            st.write(f"**Entry/Exit/Stop:** {best['entry']}/{best['exit']}/{best['stop_loss']}")
-            st.write(f"**Sharpe:** {best['sharpe']:.2f}")
-            st.write(f"**Return:** {best['total_return']:.2f}%")
+        # Z-score line
+        fig4.add_trace(go.Scatter(
+            x=result['z_score'].index, 
+            y=result['z_score'],
+            name='Z-Score', 
+            line=dict(color='#8b5cf6', width=2),
+            hovertemplate='Date: %{x}<br>Z-Score: %{y:.2f}<extra></extra>'
+        ))
         
-        with summary_col2:
-            st.subheader("Worst Parameters")
-            st.write(f"**Method:** {worst['spread_method']}")
-            st.write(f"**Z-Window:** {int(worst['z_window'])}")
-            st.write(f"**Entry/Exit/Stop:** {worst['entry']}/{worst['exit']}/{worst['stop_loss']}")
-            st.write(f"**Sharpe:** {worst['sharpe']:.2f}")
-            st.write(f"**Return:** {worst['total_return']:.2f}%")
+        # Entry signals
+        if len(entry_z) > 0:
+            fig4.add_trace(go.Scatter(
+                x=entry_z.index,
+                y=entry_z,
+                mode='markers',
+                name='Entry Signal',
+                marker=dict(
+                    symbol='circle',
+                    size=12,
+                    color='#10b981',
+                    line=dict(color='darkgreen', width=2)
+                ),
+                hovertemplate='ENTRY<br>Date: %{x}<br>Z-Score: %{y:.2f}<extra></extra>'
+            ))
         
-        with summary_col3:
-            st.subheader("Overall Statistics")
-            st.write(f"**Strategies Tested:** {len(df)}")
-            st.write(f"**Avg Sharpe:** {df['sharpe'].mean():.2f}")
-            st.write(f"**Avg Return:** {df['total_return'].mean():.2f}%")
-            st.write(f"**Max Return:** {df['total_return'].max():.2f}%")
-            st.write(f"**Min Return:** {df['total_return'].min():.2f}%")
+        # Exit signals
+        if len(exit_z) > 0:
+            fig4.add_trace(go.Scatter(
+                x=exit_z.index,
+                y=exit_z,
+                mode='markers',
+                name='Exit Signal',
+                marker=dict(
+                    symbol='x',
+                    size=10,
+                    color='#ef4444',
+                    line=dict(color='darkred', width=2)
+                ),
+                hovertemplate='EXIT<br>Date: %{x}<br>Z-Score: %{y:.2f}<extra></extra>'
+            ))
         
-        # Top strategies table
-        st.subheader("Top 10 Strategies by Sharpe Ratio")
-        top10 = df.nlargest(10, 'sharpe')[['spread_method', 'z_window', 'entry', 'exit', 
-                                            'stop_loss', 'sharpe', 'total_return', 'max_dd', 
-                                            'win_rate', 'num_trades']]
-        st.dataframe(top10.reset_index(drop=True), use_container_width=True)
+        # Add threshold lines
+        fig4.add_hline(y=entry, line_dash="dash", line_color="#10b981", opacity=0.5, 
+                      annotation_text=f"+{entry}σ (Entry)", annotation_position="right")
+        fig4.add_hline(y=-entry, line_dash="dash", line_color="#10b981", opacity=0.5,
+                      annotation_text=f"-{entry}σ (Entry)", annotation_position="right")
+        fig4.add_hline(y=exit, line_dash="dot", line_color="#ef4444", opacity=0.5,
+                      annotation_text=f"+{exit}σ (Exit)", annotation_position="right")
+        fig4.add_hline(y=-exit, line_dash="dot", line_color="#ef4444", opacity=0.5,
+                      annotation_text=f"-{exit}σ (Exit)", annotation_position="right")
+        fig4.add_hline(y=0, line_color="gray", line_width=1)
+        
+        fig4.update_layout(
+            height=400, 
+            hovermode='x unified', 
+            yaxis_title="Z-Score",
+            showlegend=True,
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01,
+                bgcolor="rgba(255, 255, 255, 0.8)"
+            )
+        )
+        st.plotly_chart(fig4, use_container_width=True)
+    
+    chart_col5, chart_col6 = st.columns(2)
+    
+    with chart_col5:
+        st.subheader("Z-Score Timeline")
+        fig5 = go.Figure()
+        fig5.add_trace(go.Scatter(
+            x=result['z_score'].index, y=result['z_score'],
+            name='Z-Score', line=dict(color='#10b981', width=2)
+        ))
+        fig5.add_hline(y=entry, line_dash="dash", line_color="orange", annotation_text=f"Entry ±{entry}σ")
+        fig5.add_hline(y=-entry, line_dash="dash", line_color="orange")
+        fig5.add_hline(y=exit, line_dash="dot", line_color="green", annotation_text=f"Exit ±{exit}σ")
+        fig5.add_hline(y=-exit, line_dash="dot", line_color="green")
+        fig5.add_hline(y=0, line_color="black", line_width=1)
+        fig5.update_layout(height=400, hovermode='x unified', yaxis_title="Z-Score")
+        st.plotly_chart(fig5, use_container_width=True)
+    
+    with chart_col6:
+        st.subheader("Rolling Correlation (60-day)")
+        rolling_corr = dashboard.data[dashboard.ticker1].rolling(60).corr(dashboard.data[dashboard.ticker2])
+        fig6 = go.Figure()
+        fig6.add_trace(go.Scatter(
+            x=rolling_corr.index, y=rolling_corr,
+            name='Correlation', line=dict(color='#3b82f6', width=2)
+        ))
+        fig6.add_hline(y=rolling_corr.mean(), line_dash="dash", line_color="red",
+                      annotation_text=f"Mean: {rolling_corr.mean():.3f}")
+        fig6.update_layout(height=400, hovermode='x unified', yaxis_title="Correlation")
+        st.plotly_chart(fig6, use_container_width=True)
+    
+    chart_col7, chart_col8 = st.columns(2)
+    
+    with chart_col7:
+        st.subheader("Strategy Drawdown")
+        fig7 = go.Figure()
+        fig7.add_trace(go.Scatter(
+            x=result['drawdown'].index, y=result['drawdown'],
+            fill='tozeroy', name='Drawdown',
+            line=dict(color='#ef4444', width=0),
+            fillcolor='rgba(239, 68, 68, 0.3)'
+        ))
+        fig7.update_layout(height=400, hovermode='x unified', yaxis_title="Drawdown (%)")
+        st.plotly_chart(fig7, use_container_width=True)
+    
+    with chart_col8:
+        st.subheader("Z-Score Distribution")
+        z_clean = result['z_score'].dropna()
+        fig8 = go.Figure()
+        fig8.add_trace(go.Histogram(
+            x=z_clean, nbinsx=50,
+            marker_color='#06b6d4', opacity=0.7
+        ))
+        fig8.update_layout(height=400, xaxis_title="Z-Score", yaxis_title="Frequency")
+        st.plotly_chart(fig8, use_container_width=True)
+    
+    st.subheader("Parameter Sensitivity Analysis")
+    
+    param_col1, param_col2 = st.columns(2)
+    
+    with param_col1:
+        param_df = df[(df['spread_method'] == spread_method) & (df['z_window'] == z_window)]
+        fig9 = go.Figure()
+        fig9.add_trace(go.Scatter(
+            x=param_df['entry'], y=param_df['sharpe'],
+            mode='markers',
+            marker=dict(
+                size=10,
+                color=param_df['total_return'],
+                colorscale='RdYlGn',
+                showscale=True,
+                colorbar=dict(title="Return %")
+            ),
+            text=param_df['total_return'].round(2),
+            hovertemplate='Entry: %{x}<br>Sharpe: %{y:.2f}<br>Return: %{text}%<extra></extra>'
+        ))
+        fig9.add_trace(go.Scatter(
+            x=[entry], y=[result['sharpe']],
+            mode='markers', name='Current',
+            marker=dict(size=20, color='red', symbol='star')
+        ))
+        fig9.update_layout(
+            title="Entry Threshold vs Sharpe Ratio",
+            height=400,
+            xaxis_title="Entry Threshold",
+            yaxis_title="Sharpe Ratio"
+        )
+        st.plotly_chart(fig9, use_container_width=True)
+    
+    with param_col2:
+        total_entries = len(entry_signals)
+        
+        st.markdown("#### 📊 Signal Statistics")
+        st.write(f"**Total Entry Signals:** {total_entries} 🟢")
+        st.write(f"**Exit Signals:** {len(exit_signals)} 🔴")
+        st.write(f"**Complete Trades:** {result['num_trades']}")
+        st.write(f"**Win Rate:** {result['win_rate']:.1f}%")
+        
+        if result['num_trades'] > 0:
+            avg_trade_length = len(result['signals']) / result['num_trades']
+            st.write(f"**Avg Trade Duration:** {avg_trade_length:.1f} days")
+        
+        st.markdown("---")
+        st.markdown("**Signal Interpretation:**")
+        st.write("🟢 **Entry** = Z-score crosses entry threshold (±{:.1f}σ)".format(entry))
+        st.write("   • Opens pair: Long one stock, Short the other")
+        st.write("🔴 **Exit** = Z-score reverts to exit threshold (±{:.1f}σ)".format(exit))
+        st.write("   • Closes both positions")
+    
+    st.header("🏆 Optimization Summary")
+    
+    summary_col1, summary_col2, summary_col3 = st.columns(3)
+    
+    with summary_col1:
+        st.subheader("Best Parameters")
+        st.write(f"**Method:** {best['spread_method']}")
+        st.write(f"**Z-Window:** {int(best['z_window'])}")
+        st.write(f"**Entry/Exit/Stop:** {best['entry']}/{best['exit']}/{best['stop_loss']}")
+        st.write(f"**Sharpe:** {best['sharpe']:.2f}")
+        st.write(f"**Return:** {best['total_return']:.2f}%")
+    
+    with summary_col2:
+        st.subheader("Worst Parameters")
+        st.write(f"**Method:** {worst['spread_method']}")
+        st.write(f"**Z-Window:** {int(worst['z_window'])}")
+        st.write(f"**Entry/Exit/Stop:** {worst['entry']}/{worst['exit']}/{worst['stop_loss']}")
+        st.write(f"**Sharpe:** {worst['sharpe']:.2f}")
+        st.write(f"**Return:** {worst['total_return']:.2f}%")
+    
+    with summary_col3:
+        st.subheader("Overall Statistics")
+        st.write(f"**Strategies Tested:** {len(df)}")
+        st.write(f"**Avg Sharpe:** {df['sharpe'].mean():.2f}")
+        st.write(f"**Avg Return:** {df['total_return'].mean():.2f}%")
+        st.write(f"**Max Return:** {df['total_return'].max():.2f}%")
+        st.write(f"**Min Return:** {df['total_return'].min():.2f}%")
+    
+    st.subheader("Top 10 Strategies by Sharpe Ratio")
+    top10 = df.nlargest(10, 'sharpe')[['spread_method', 'z_window', 'entry', 'exit', 
+                                        'stop_loss', 'sharpe', 'total_return', 'max_dd', 
+                                        'win_rate', 'num_trades']]
+    st.dataframe(top10.reset_index(drop=True), use_container_width=True)
 
 
 if __name__ == "__main__":
