@@ -481,87 +481,63 @@ def main():
             x=norm_data.index, y=norm_data[dashboard.ticker2],
             name=dashboard.ticker2, line=dict(color='#ef4444', width=2)
         ))
-        fig1.update_layout(height=400, hovermode='x unified', yaxis_title="Normalized Price")
+        fig1.update_layout(
+            height=400, 
+            hovermode='x unified', 
+            yaxis_title="Normalized Price",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
         st.plotly_chart(fig1, use_container_width=True)
     
     with chart_col2:
         st.subheader("Cumulative Returns")
-        fig2 = go.Figure()
         
         strategy_dates = result['strategy_cumulative'].index
         strategy_returns = (result['strategy_cumulative'] - 1) * 100
-        sp500_dates = result['sp500_cumulative'].index
-        sp500_returns = (result['sp500_cumulative'] - 1) * 100
         
-        fig2.add_trace(go.Scatter(
-            x=sp500_dates,
-            y=sp500_returns,
-            name='S&P 500',
-            line=dict(color='#6366f1', width=3),
-            hovertemplate='Date: %{x}<br>S&P 500: %{y:.2f}%<extra></extra>',
-            showlegend=True
-        ))
+        final_strategy = float(strategy_returns.iloc[-1]) if len(strategy_returns) > 0 else 0.0
         
+        fig2 = go.Figure()
+        
+        # Strategy returns
         fig2.add_trace(go.Scatter(
             x=strategy_dates,
             y=strategy_returns,
             name='Pairs Strategy',
-            line=dict(color='#10b981', width=3),
-            hovertemplate='Date: %{x}<br>Strategy: %{y:.2f}%<extra></extra>',
-            showlegend=True
+            line=dict(color='#10b981', width=2),
+            hovertemplate='Date: %{x}<br>Return: %{y:.2f}%<extra></extra>'
         ))
         
+        # Add zero line
         fig2.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
         
-        final_strategy = float(strategy_returns.iloc[-1]) if len(strategy_returns) > 0 else 0.0
-        final_sp500 = float(sp500_returns.iloc[-1]) if len(sp500_returns) > 0 else 0.0
-        
+        # Add final value annotation
         if len(strategy_dates) > 0:
             fig2.add_annotation(
                 x=strategy_dates[-1],
                 y=final_strategy,
-                text=f"Strategy: {final_strategy:.1f}%",
+                text=f"{final_strategy:.1f}%",
                 showarrow=True,
                 arrowhead=2,
-                ax=-50,
+                ax=-40,
                 ay=-30,
                 bgcolor="#10b981",
-                font=dict(color="white", size=12)
-            )
-        
-        if len(sp500_dates) > 0:
-            fig2.add_annotation(
-                x=sp500_dates[-1],
-                y=final_sp500,
-                text=f"S&P 500: {final_sp500:.1f}%",
-                showarrow=True,
-                arrowhead=2,
-                ax=-50,
-                ay=30,
-                bgcolor="#6366f1",
-                font=dict(color="white", size=12)
+                font=dict(color="white", size=11)
             )
         
         fig2.update_layout(
-            height=400, 
-            hovermode='x unified', 
+            height=400,
+            hovermode='x unified',
             yaxis_title="Cumulative Return (%)",
             xaxis_title="Date",
-            legend=dict(
-                yanchor="top",
-                y=0.99,
-                xanchor="left",
-                x=0.01,
-                bgcolor="rgba(255, 255, 255, 0.9)",
-                bordercolor="gray",
-                borderwidth=1
-            ),
-            plot_bgcolor='rgba(0,0,0,0.05)',
-            paper_bgcolor='white'
+            showlegend=False
         )
-        
-        if len(sp500_returns) == 0:
-            st.warning("⚠️ S&P 500 data not available")
         
         st.plotly_chart(fig2, use_container_width=True)
     
@@ -571,6 +547,11 @@ def main():
         st.subheader("Price Ratio with Trading Signals")
         
         price_ratio = dashboard.data[dashboard.ticker1] / dashboard.data[dashboard.ticker2]
+        
+        # Normalize the price ratio so mean = 1
+        price_ratio_mean = price_ratio.mean()
+        price_ratio_normalized = price_ratio / price_ratio_mean
+        
         position_changes = result['signals']['position'].diff().fillna(0)
         
         # Get entry and exit points
@@ -580,17 +561,17 @@ def main():
         fig3 = go.Figure()
         
         fig3.add_trace(go.Scatter(
-            x=price_ratio.index, 
-            y=price_ratio,
+            x=price_ratio_normalized.index, 
+            y=price_ratio_normalized,
             name='Price Ratio',
             line=dict(color='#3b82f6', width=2),
-            hovertemplate='Date: %{x}<br>Ratio: %{y:.4f}<extra></extra>'
+            hovertemplate='Date: %{x}<br>Normalized Ratio: %{y:.4f}<extra></extra>'
         ))
         
         if len(entry_signals) > 0:
             fig3.add_trace(go.Scatter(
                 x=entry_signals,
-                y=price_ratio.loc[entry_signals],
+                y=price_ratio_normalized.loc[entry_signals],
                 mode='markers',
                 name='Entry Signal',
                 marker=dict(
@@ -599,13 +580,13 @@ def main():
                     color='#10b981',
                     line=dict(color='darkgreen', width=2)
                 ),
-                hovertemplate='ENTRY<br>Date: %{x}<br>Ratio: %{y:.4f}<extra></extra>'
+                hovertemplate='ENTRY<br>Date: %{x}<br>Normalized Ratio: %{y:.4f}<extra></extra>'
             ))
         
         if len(exit_signals) > 0:
             fig3.add_trace(go.Scatter(
                 x=exit_signals,
-                y=price_ratio.loc[exit_signals],
+                y=price_ratio_normalized.loc[exit_signals],
                 mode='markers',
                 name='Exit Signal',
                 marker=dict(
@@ -614,10 +595,10 @@ def main():
                     color='#ef4444',
                     line=dict(color='darkred', width=2)
                 ),
-                hovertemplate='EXIT<br>Date: %{x}<br>Ratio: %{y:.4f}<extra></extra>'
+                hovertemplate='EXIT<br>Date: %{x}<br>Normalized Ratio: %{y:.4f}<extra></extra>'
             ))
         
-        ratio_ma = price_ratio.rolling(60).mean()
+        ratio_ma = price_ratio_normalized.rolling(60).mean()
         fig3.add_trace(go.Scatter(
             x=ratio_ma.index, 
             y=ratio_ma,
@@ -626,17 +607,21 @@ def main():
             hovertemplate='MA: %{y:.4f}<extra></extra>'
         ))
         
+        # Add horizontal line at y=1 to show the mean
+        fig3.add_hline(y=1, line_dash="dot", line_color="gray", opacity=0.7,
+                      annotation_text="Mean = 1", annotation_position="right")
+        
         fig3.update_layout(
             height=400, 
             hovermode='x unified', 
-            yaxis_title=f"Price Ratio ({dashboard.ticker1}/{dashboard.ticker2})",
+            yaxis_title=f"Normalized Price Ratio ({dashboard.ticker1}/{dashboard.ticker2})",
             showlegend=True,
             legend=dict(
-                yanchor="top",
-                y=0.99,
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
                 xanchor="right",
-                x=0.99,
-                bgcolor="rgba(255, 255, 255, 0.8)"
+                x=1
             )
         )
         st.plotly_chart(fig3, use_container_width=True)
@@ -707,11 +692,11 @@ def main():
             yaxis_title="Z-Score",
             showlegend=True,
             legend=dict(
-                yanchor="top",
-                y=0.99,
-                xanchor="left",
-                x=0.01,
-                bgcolor="rgba(255, 255, 255, 0.8)"
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
             )
         )
         st.plotly_chart(fig4, use_container_width=True)
@@ -730,7 +715,12 @@ def main():
         fig5.add_hline(y=exit, line_dash="dot", line_color="green", annotation_text=f"Exit ±{exit}σ")
         fig5.add_hline(y=-exit, line_dash="dot", line_color="green")
         fig5.add_hline(y=0, line_color="black", line_width=1)
-        fig5.update_layout(height=400, hovermode='x unified', yaxis_title="Z-Score")
+        fig5.update_layout(
+            height=400, 
+            hovermode='x unified', 
+            yaxis_title="Z-Score",
+            showlegend=False
+        )
         st.plotly_chart(fig5, use_container_width=True)
     
     with chart_col6:
@@ -743,7 +733,12 @@ def main():
         ))
         fig6.add_hline(y=rolling_corr.mean(), line_dash="dash", line_color="red",
                       annotation_text=f"Mean: {rolling_corr.mean():.3f}")
-        fig6.update_layout(height=400, hovermode='x unified', yaxis_title="Correlation")
+        fig6.update_layout(
+            height=400, 
+            hovermode='x unified', 
+            yaxis_title="Correlation",
+            showlegend=False
+        )
         st.plotly_chart(fig6, use_container_width=True)
     
     chart_col7, chart_col8 = st.columns(2)
@@ -757,7 +752,12 @@ def main():
             line=dict(color='#ef4444', width=0),
             fillcolor='rgba(239, 68, 68, 0.3)'
         ))
-        fig7.update_layout(height=400, hovermode='x unified', yaxis_title="Drawdown (%)")
+        fig7.update_layout(
+            height=400, 
+            hovermode='x unified', 
+            yaxis_title="Drawdown (%)",
+            showlegend=False
+        )
         st.plotly_chart(fig7, use_container_width=True)
     
     with chart_col8:
@@ -768,7 +768,12 @@ def main():
             x=z_clean, nbinsx=50,
             marker_color='#06b6d4', opacity=0.7
         ))
-        fig8.update_layout(height=400, xaxis_title="Z-Score", yaxis_title="Frequency")
+        fig8.update_layout(
+            height=400, 
+            xaxis_title="Z-Score", 
+            yaxis_title="Frequency",
+            showlegend=False
+        )
         st.plotly_chart(fig8, use_container_width=True)
     
     st.subheader("Parameter Sensitivity Analysis")
@@ -800,7 +805,14 @@ def main():
             title="Entry Threshold vs Sharpe Ratio",
             height=400,
             xaxis_title="Entry Threshold",
-            yaxis_title="Sharpe Ratio"
+            yaxis_title="Sharpe Ratio",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
         )
         st.plotly_chart(fig9, use_container_width=True)
     
