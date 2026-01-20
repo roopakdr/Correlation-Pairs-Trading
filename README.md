@@ -1,14 +1,17 @@
-#Correlation-Pairs-Trading
+Correlation-Pairs-Trading
+
 A Python implementation of a correlation-based pairs trading system, including pair selection, visualization, and a live trading bot using the Interactive Brokers (IBKR) API.
 ​
 
 Overview
+
 This project focuses on identifying and trading highly correlated equity pairs using a mean-reversion style strategy.
 ​
 The repository currently includes the core correlation analytics plus an IBKR-ready algorithmic trading script.
 ​
 
 Features
+
 Correlation analysis for a universe of symbols to identify candidate pairs.
 ​
 
@@ -22,6 +25,7 @@ Modular structure so you can plug in your own universe, signal logic, and risk m
 ​
 
 Project Structure
+
 correlation.py:
 
 Computes rolling correlations and related statistics for a set of tickers.
@@ -34,11 +38,7 @@ algo.py:
 Implements the IBKR pairs trading bot using signals derived from the correlation / spread behavior.
 
 Handles order submission and position management through the Interactive Brokers API.
-​
 
-README.md:
-
-Project documentation and usage instructions.
 ​
 
 Requirements
