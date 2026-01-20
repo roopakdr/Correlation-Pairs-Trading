@@ -6,7 +6,6 @@ A comprehensive pairs trading platform featuring both automated trading via Inte
 
 - [Overview](#overview)
 - [Features](#features)
-- [Project Structure](#project-structure)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Components](#components)
@@ -47,16 +46,6 @@ The system uses statistical methods to identify when two historically correlated
 - 📉 **Risk Analytics**: Drawdown, Sharpe ratio, and win rate analysis
 - 🔄 **Rolling Statistics**: Correlation and z-score visualization
 
-## 📁 Project Structure
-
-```
-pairs-trading-system/
-├── ib_pairs_trading_bot.py        # Automated trading bot (IB integration)
-├── streamlit_pairs_dashboard.py   # Interactive analysis dashboard
-├── requirements.txt                # Python dependencies
-├── logs/                          # Trading logs (auto-generated)
-└── README.md                      # This file
-```
 
 ## 🛠️ Installation
 
