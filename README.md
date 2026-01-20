@@ -1,8 +1,8 @@
-# 🎯 Automated Pairs Trading System
+# Automated Pairs Trading System
 
 A comprehensive pairs trading platform featuring both automated trading via Interactive Brokers and an interactive analysis dashboard. This system identifies and executes statistical arbitrage opportunities between correlated stock pairs using mean reversion strategies.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Overview](#overview)
 - [Features](#features)
@@ -17,7 +17,7 @@ A comprehensive pairs trading platform featuring both automated trading via Inte
 - [Best Practices](#best-practices)
 - [License](#license)
 
-## 🌟 Overview
+## Overview
 
 This pairs trading system combines two powerful components:
 
@@ -26,28 +26,28 @@ This pairs trading system combines two powerful components:
 
 The system uses statistical methods to identify when two historically correlated stocks diverge from their typical relationship, then trades on the expectation that they will revert to the mean.
 
-## ✨ Features
+## Features
 
 ### Trading Bot Features
-- ✅ **Live Trading**: Automated execution through Interactive Brokers API
-- ✅ **Multiple Spread Methods**: Hedge ratio, log ratio, and simple ratio calculations
-- ✅ **Risk Management**: Stop-loss protection and position sizing
-- ✅ **Real-time Monitoring**: Continuous price tracking and signal generation
-- ✅ **Paper & Live Trading**: Support for both paper and live accounts
-- ✅ **Comprehensive Logging**: Detailed trade and signal logs
-- ✅ **Market Hours Detection**: Automatic trading only during market hours
+- **Live Trading**: Automated execution through Interactive Brokers API
+- **Multiple Spread Methods**: Hedge ratio, log ratio, and simple ratio calculations
+- **Risk Management**: Stop-loss protection and position sizing
+- **Real-time Monitoring**: Continuous price tracking and signal generation
+- **Paper & Live Trading**: Support for both paper and live accounts
+- **Comprehensive Logging**: Detailed trade and signal logs
+- **Market Hours Detection**: Automatic trading only during market hours
 
 ### Dashboard Features
-- 📊 **Interactive Backtesting**: Test strategies across historical data
-- 🔍 **Parameter Optimization**: Automated search for optimal parameters
-- 📈 **Visual Analysis**: 10+ interactive charts and metrics
-- 🏆 **Performance Comparison**: Strategy vs S&P 500 benchmark
-- 🎛️ **Real-time Parameter Tuning**: Adjust settings and see results instantly
-- 📉 **Risk Analytics**: Drawdown, Sharpe ratio, and win rate analysis
-- 🔄 **Rolling Statistics**: Correlation and z-score visualization
+- **Interactive Backtesting**: Test strategies across historical data
+- **Parameter Optimization**: Automated search for optimal parameters
+- **Visual Analysis**: 10+ interactive charts and metrics
+- **Performance Comparison**: Strategy vs S&P 500 benchmark
+- **Real-time Parameter Tuning**: Adjust settings and see results instantly
+- **Risk Analytics**: Drawdown, Sharpe ratio, and win rate analysis
+- **Rolling Statistics**: Correlation and z-score visualization
 
 
-## 🛠️ Installation
+## Installation
 
 ### Prerequisites
 - Python 3.8 or higher
@@ -92,7 +92,7 @@ pytz>=2023.3
    - File → Global Configuration → Lock and Exit
    - Uncheck "Auto logoff time"
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Running the Analysis Dashboard
 
@@ -118,7 +118,7 @@ Follow the interactive prompts to:
 3. Configure IB connection
 4. Start automated trading
 
-## 🧩 Components
+## Components
 
 ### 1. Interactive Dashboard (`streamlit_pairs_dashboard.py`)
 
@@ -159,7 +159,7 @@ User Input → Data Fetch → Optimization → Display Results → Parameter Tun
 Connect to IB → Fetch History → Monitor Prices → Generate Signals → Execute Trades → Log Results
 ```
 
-## 📚 Strategy Explanation
+## Strategy Explanation
 
 ### What is Pairs Trading?
 
@@ -226,7 +226,7 @@ spread = stock1 / stock2
 - Emergency exit
 - Prevents excessive losses
 
-## 💡 Usage Examples
+## Usage Examples
 
 ### Example 1: Research with Dashboard
 
@@ -272,7 +272,7 @@ Position size: 100 shares
 ### Example 3: Live Trading (Advanced)
 
 ```bash
-⚠️ ONLY FOR EXPERIENCED TRADERS
+ONLY FOR EXPERIENCED TRADERS
 
 python ib_pairs_trading_bot.py
 
@@ -282,7 +282,7 @@ python ib_pairs_trading_bot.py
 # Have a plan to manually exit if needed
 ```
 
-## ⚙️ Configuration Guide
+## Configuration Guide
 
 ### Dashboard Configuration
 
@@ -323,7 +323,7 @@ position_size = 200
 - **Paper Trading**: Start here! Use 7497 (TWS) or 4002 (Gateway)
 - **Live Trading**: Only after successful paper trading. Use 7496 (TWS) or 4001 (Gateway)
 
-## 🛡️ Safety & Risk Management
+## Safety & Risk Management
 
 ### Built-in Protections
 
@@ -335,7 +335,7 @@ position_size = 200
 
 ### Risk Considerations
 
-⚠️ **Important Warnings**:
+**Important Warnings**:
 
 - Pairs trading is NOT risk-free
 - Correlations can break down suddenly
@@ -354,7 +354,7 @@ position_size = 200
 | **Daily Loss Limit** | Stop trading if down >2% in one day |
 | **Number of Pairs** | Diversify across 5-10 pairs minimum |
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### Dashboard Issues
 
@@ -395,7 +395,7 @@ position_size = 200
 **Problem**: "Unable to get prices from snapshot"
 - **Solution**: Normal when market is closed. Bot uses last available prices
 
-## 📖 Best Practices
+## Best Practices
 
 ### Research Phase (Use Dashboard)
 
@@ -431,7 +431,7 @@ position_size = 200
 - **Quarterly**: Reoptimize parameters
 - **Annually**: Evaluate strategy viability
 
-## 📊 Performance Metrics Explained
+## Performance Metrics Explained
 
 ### Sharpe Ratio
 - Measures risk-adjusted returns
@@ -453,7 +453,7 @@ position_size = 200
 - Compare to buy-and-hold and S&P 500
 - Account for transaction costs
 
-## 🆘 Support & Resources
+## Support & Resources
 
 ### Getting Help
 
@@ -469,7 +469,7 @@ position_size = 200
 - [Streamlit Documentation](https://docs.streamlit.io/)
 - [Yahoo Finance API](https://pypi.org/project/yfinance/)
 
-## 📝 Logging
+## Logging
 
 The bot creates detailed logs in the `logs/` directory:
 
@@ -490,7 +490,7 @@ logs/ib_bot_AAPL_MSFT_20240120_143022.log
 - `WARNING`: Potential issues
 - `ERROR`: Problems requiring attention
 
-## ⚖️ Legal Disclaimer
+## Legal Disclaimer
 
 **IMPORTANT**: 
 
@@ -503,13 +503,13 @@ logs/ib_bot_AAPL_MSFT_20240120_143022.log
 - Consult a licensed financial advisor before trading
 - The authors assume no liability for trading losses
 
-## 📄 License
+## License
 
-This project is provided as-is for educational purposes. Use at your own risk.
+This project is for educational purposes. Use at your own risk.
 
 ---
 
-## 🎓 Educational Notes
+## Educational Notes
 
 ### Why Pairs Trading Works
 
