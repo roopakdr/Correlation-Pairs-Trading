@@ -45,7 +45,7 @@ class InteractivePairsTradingDashboard:
                 st.error("Please provide two different ticker symbols")
                 return None
             
-            st.success(f"✅ Downloaded {len(self.data)} trading days")
+            st.success(f"Downloaded {len(self.data)} trading days")
             return self.data
         
     def fetch_sp500(self):
@@ -247,17 +247,17 @@ class InteractivePairsTradingDashboard:
         status_text.empty()
         
         if len(results) > 0:
-            st.success(f"✅ Optimization complete! Tested {len(results)} valid strategies.")
+            st.success(f"Optimization complete! Tested {len(results)} valid strategies.")
             return pd.DataFrame(results)
         else:
-            st.error("❌ No valid strategies found. Try different tickers or parameters.")
+            st.error("No valid strategies found. Try different tickers or parameters.")
             return pd.DataFrame()
 
 
 def main():
     st.set_page_config(page_title="Pairs Trading Dashboard", layout="wide", page_icon="📊")
     
-    st.title("🎯 Interactive Pairs Trading Dashboard")
+    st.title("Interactive Pairs Trading Dashboard")
     
     if 'spread_method' not in st.session_state:
         st.session_state.spread_method = 'hedge_ratio'
@@ -271,7 +271,7 @@ def main():
         st.session_state.stop_loss = 3.0
     
     with st.sidebar:
-        st.header("📌 Configuration")
+        st.header("Configuration")
         
         ticker1 = st.text_input("First Ticker", value="AAPL").upper()
         ticker2 = st.text_input("Second Ticker", value="MSFT").upper()
@@ -288,7 +288,7 @@ def main():
             start_date = None
             end_date = None
         
-        run_analysis = st.button("🚀 Run Analysis", type="primary", use_container_width=True)
+        run_analysis = st.button("Run Analysis", type="primary", use_container_width=True)
         
         if st.button("🔄 Reset Dashboard", use_container_width=True):
             for key in list(st.session_state.keys()):
@@ -312,7 +312,7 @@ def main():
             
             dashboard.fetch_sp500()
             
-            with st.spinner("🔄 Running optimization... This may take a minute."):
+            with st.spinner("Running optimization... This may take a minute."):
                 dashboard.optimization_results = dashboard.run_optimization()
             
             st.session_state.dashboard = dashboard
@@ -322,7 +322,7 @@ def main():
     dashboard = st.session_state.dashboard
     
     if dashboard.optimization_results is None or len(dashboard.optimization_results) == 0:
-        st.error("❌ Optimization failed. Please try different ticker symbols.")
+        st.error("Optimization failed. Please try different ticker symbols.")
         return
     
     df = dashboard.optimization_results
@@ -345,7 +345,7 @@ def main():
     
     with col2:
         st.write("")
-        if st.button("🏆 Load Best", use_container_width=True):
+        if st.button("Load Best", use_container_width=True):
             st.session_state.spread_method = best['spread_method']
             st.session_state.z_window = int(best['z_window'])
             st.session_state.entry = float(best['entry'])
@@ -353,7 +353,7 @@ def main():
             st.session_state.stop_loss = float(best['stop_loss'])
             st.rerun()
         
-        if st.button("⚠️ Load Worst", use_container_width=True):
+        if st.button("Load Worst", use_container_width=True):
             st.session_state.spread_method = worst['spread_method']
             st.session_state.z_window = int(worst['z_window'])
             st.session_state.entry = float(worst['entry'])
@@ -819,7 +819,7 @@ def main():
     with param_col2:
         total_entries = len(entry_signals)
         
-        st.markdown("#### 📊 Signal Statistics")
+        st.markdown("#### Signal Statistics")
         st.write(f"**Total Entry Signals:** {total_entries} 🟢")
         st.write(f"**Exit Signals:** {len(exit_signals)} 🔴")
         st.write(f"**Complete Trades:** {result['num_trades']}")
@@ -836,7 +836,7 @@ def main():
         st.write("🔴 **Exit** = Z-score reverts to exit threshold (±{:.1f}σ)".format(exit))
         st.write("   • Closes both positions")
     
-    st.header("🏆 Optimization Summary")
+    st.header("Optimization Summary")
     
     summary_col1, summary_col2, summary_col3 = st.columns(3)
     
