@@ -540,6 +540,6 @@ Pairs trading exploits **mean reversion** - the tendency of prices to return to 
 
 **Last Updated**: January 2026  
 **Version**: 1.0  
-**Maintainer**: Your Trading System
+**Maintainer**: Roopak Dasararaju
 
 For questions, issues, or contributions, please open an issue on the repository.
