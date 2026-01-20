@@ -1,4 +1,4 @@
-Correlation-Pairs-Trading
+#Correlation-Pairs-Trading
 A Python implementation of a correlation-based pairs trading system, including pair selection, visualization, and a live trading bot using the Interactive Brokers (IBKR) API.
 ​
 
